@@ -36,8 +36,8 @@ contract SafeVault is
         address owner_,
         address manager_,
         address[] memory signers_, 
-        uint64 threshold_
-    ) MultiSig(signers_) {
+        uint16 threshold_
+    ) MultiSig(signers_, threshold_) {
         owner = owner_;
         userIdentity[manager_] = Identity.manager;
     }
@@ -95,32 +95,28 @@ contract SafeVault is
         return this.onERC1155BatchReceived.selector;
     }
 
-    function addSigner(bytes[] memory newSigners) external onlyOwner {
-        
-    }
-
-    function removeSigners(bytes[] memory oldSigners) external onlyOwner {
-        
-    } 
-
-    function setThreshold(uint64 newThreshold) external onlyOwner {
-        
-    }
-
-    function setTokenRateLimit(address token, uint32 rateLimit) external onlyManager {
+    function setTokenRateLimit(
+        address token, 
+        uint32 rateLimit
+    ) external onlyManager {
         tokenRateLimit[token] = rateLimit;
     }
 
 
-    function callVault(bytes calldata data) external {
-        (bool success, ) = address(this).call(data);
-        require(success, "Call vault fail");
+    function callVault(
+        uint64 _proposalID,
+        address target, 
+        bytes calldata data
+    ) external onlyMultiSigPass(_proposalID) {
+        (bool success, ) = target.call(data);
+        require(success, "Call fail");
     }
 
     function transferETH(
+        uint64 _proposalID,
         address[] calldata receiver,
         uint256[] calldata amount
-    ) external {
+    ) external onlyMultiSigPass(_proposalID) {
         unchecked{
             for(uint256 i; i<receiver.length; i++){
                 (bool success, ) = receiver[i].call{value: amount[i]}("");
@@ -130,10 +126,11 @@ contract SafeVault is
     }
 
     function transferERC20(
+        uint64 _proposalID,
         address[] calldata erc20Token,
         address[] calldata receiver,
         uint256[] calldata amount
-    ) external {
+    ) external onlyMultiSigPass(_proposalID) {
         unchecked{
             for(uint256 i; i< receiver.length; i++){
                 IERC20(erc20Token[i]).safeTransfer(receiver[i], amount[i]);
@@ -142,10 +139,11 @@ contract SafeVault is
     }
 
     function transferERC721(
+        uint64 _proposalID,
         address[] calldata erc721Token,
         uint256[] calldata ids,
         address[] calldata receiver
-    ) external {
+    ) external onlyMultiSigPass(_proposalID) {
         unchecked{
             for(uint256 i; i<ids.length; i++){
                 IERC721(erc721Token[i]).safeTransferFrom(address(this), receiver[i], ids[i]);
@@ -154,10 +152,11 @@ contract SafeVault is
     }
 
     function transferERC1155(
+        uint64 _proposalID,
         address[] calldata erc1155Token,
         uint256[] calldata ids,
         address[] calldata receiver
-    ) external {
+    ) external onlyMultiSigPass(_proposalID) {
 
     }
 
