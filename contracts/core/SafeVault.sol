@@ -26,6 +26,8 @@ contract SafeVault is
     uint64 public freezingTime;
     uint64 public delayTime;
 
+    bool public lockState;
+
     enum Identity{people, whitelist, blacklist, manager}
     
     mapping(address => uint32) public tokenRateLimit;
@@ -52,6 +54,16 @@ contract SafeVault is
     modifier onlyManager() {
         _checkManager();
         _;
+    }
+
+    modifier Lock() {
+        require(lockState == false, "Locked");
+        _;
+    }
+
+    function updateLock(bool state) external onlyManager {
+        lockState = state;
+        emit UpdateLock(state);
     }
 
     function supportsInterface(
@@ -100,6 +112,7 @@ contract SafeVault is
         uint32 rateLimit
     ) external onlyManager {
         tokenRateLimit[token] = rateLimit;
+        emit UpdateTokenLimit(token, rateLimit);
     }
 
 
@@ -107,22 +120,24 @@ contract SafeVault is
         uint64 _proposalID,
         address target, 
         bytes calldata data
-    ) external onlyMultiSigPass(_proposalID) {
+    ) external Lock onlySigner onlyMultiSigPass(_proposalID) {
         (bool success, ) = target.call(data);
         require(success, "Call fail");
+        emit TouchVault(_proposalID, msg.sender, data);
     }
 
     function transferETH(
         uint64 _proposalID,
         address[] calldata receiver,
         uint256[] calldata amount
-    ) external onlyMultiSigPass(_proposalID) {
+    ) external Lock onlySigner onlyMultiSigPass(_proposalID) {
         unchecked{
             for(uint256 i; i<receiver.length; i++){
                 (bool success, ) = receiver[i].call{value: amount[i]}("");
                 require(success);
             }
         }
+        emit TransferETH(_proposalID, msg.sender, receiver, amount);
     }
 
     function transferERC20(
@@ -130,12 +145,13 @@ contract SafeVault is
         address[] calldata erc20Token,
         address[] calldata receiver,
         uint256[] calldata amount
-    ) external onlyMultiSigPass(_proposalID) {
+    ) external Lock onlySigner onlyMultiSigPass(_proposalID) {
         unchecked{
             for(uint256 i; i< receiver.length; i++){
                 IERC20(erc20Token[i]).safeTransfer(receiver[i], amount[i]);
             }
         }
+        emit TranferERC20(_proposalID, msg.sender, erc20Token, receiver, amount);
     }
 
     function transferERC721(
@@ -143,24 +159,38 @@ contract SafeVault is
         address[] calldata erc721Token,
         uint256[] calldata ids,
         address[] calldata receiver
-    ) external onlyMultiSigPass(_proposalID) {
+    ) external Lock onlySigner onlyMultiSigPass(_proposalID) {
         unchecked{
             for(uint256 i; i<ids.length; i++){
                 IERC721(erc721Token[i]).safeTransferFrom(address(this), receiver[i], ids[i]);
             }
         }
+        emit TransferERC721(_proposalID, msg.sender, erc721Token, ids, receiver);
     }
 
     function transferERC1155(
         uint64 _proposalID,
-        address[] calldata erc1155Token,
+        address erc1155Token,
+        address receiver,
         uint256[] calldata ids,
-        address[] calldata receiver
-    ) external onlyMultiSigPass(_proposalID) {
-
+        uint256[] calldata values
+    ) external Lock onlySigner onlyMultiSigPass(_proposalID) {
+        unchecked{
+            for(uint256 i; i<ids.length; i++){
+                IERC1155(erc1155Token).safeBatchTransferFrom(address(this), receiver, ids, values, "");
+            }
+        }
     }
 
-    function emergency() external {}
+    function emergency(
+        uint64 _proposalID, 
+        address target, 
+        bytes calldata data
+    ) external onlySigner onlyMultiSigPass(_proposalID) {
+        lockState = true;
+        (bool success, ) = target.call(data);
+        require(success, "Call fail");
+    }
 
     function _checkOwner() private view {
         require(msg.sender == owner, "Non owner");
